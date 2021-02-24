@@ -1,0 +1,14 @@
+[package]
+name = "confidence"
+version = "0.1.0"
+authors = ["John Baber-Lucero <cargo@frundle.com>"]
+license = "GPL-3.0"
+description = "Build confidence that two directories are equal by hashing contents"
+homepage = "https://github.com/jbaber/confidence"
+repository = "https://github.com/jbaber/confidence"
+readme = "README.md"
+edition = "2018"
+
+[dependencies]
+docopt = "1"
+serde = { version = "1", features = ["derive"] }
