@@ -12,3 +12,4 @@ edition = "2018"
 [dependencies]
 docopt = "1"
 serde = { version = "1", features = ["derive"] }
+walkdir = "2"
