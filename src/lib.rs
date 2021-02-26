@@ -1,33 +1,37 @@
 use walkdir::WalkDir;
+use std::io::Error;
+use std::io::ErrorKind;
+use std::io::Write;
 
 const VERSION: &str = "0.1.0";
 
 
 fn runtime_with_regular_args(version_flag: bool, ignore_io_errors_flag: bool,
-        filename_l: &str, filename_r: &str) -> i32 {
+        filename_l: &str, filename_r: &str,
+        mut writable: impl Write) -> Result<i32, Error> {
     if version_flag {
-        println!("{}", VERSION);
-        return 0;
+        writeln!(writable, "{}", VERSION)?;
+        return Ok(0);
     }
 
     for entry in WalkDir::new(filename_l) {
         match entry {
             Ok(entry) => {
-                println!("{:?}", entry.path().display());
+                writeln!(writable, "{:?}", entry.path().display())?;
             },
             Err(error) => {
                 if ignore_io_errors_flag {
                     continue;
                 }
                 else {
-                    println!("{}", error.to_string());
-                    return 1;
+                    writeln!(writable, "{}", error.to_string())?;
+                    return Err(Error::new(ErrorKind::Other, error));
                 }
             }
         }
     }
 
-    0
+    Ok(0)
 }
 
 
@@ -35,8 +39,17 @@ fn runtime_with_regular_args(version_flag: bool, ignore_io_errors_flag: bool,
 pub fn actual_runtime(args: docopt::ArgvMap) -> i32 {
     println!("{:?}", args);
 
-    runtime_with_regular_args(args.get_bool("--version"),
+    match runtime_with_regular_args(args.get_bool("--version"),
             args.get_bool("--ignore-errors"),
             args.get_str("<directory_one>"),
-            args.get_str("<directory_two>"))
+            args.get_str("<directory_two>"),
+            &mut std::io::stdout()) {
+        Ok(retval) => {
+            retval
+        },
+        Err(error) => {
+            println!("{:?}", error);
+            1
+        }
+    }
 }
