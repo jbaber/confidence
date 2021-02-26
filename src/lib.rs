@@ -2,18 +2,13 @@ use walkdir::WalkDir;
 
 const VERSION: &str = "0.1.0";
 
-pub fn actual_runtime(args: docopt::ArgvMap) -> i32 {
-    println!("{:?}", args);
 
-    if args.get_bool("--version") {
+fn runtime_with_regular_args(version_flag: bool, ignore_io_errors_flag: bool,
+        filename_l: &str, filename_r: &str) -> i32 {
+    if version_flag {
         println!("{}", VERSION);
         return 0;
     }
-
-    let ignore_io_errors = args.get_bool("--ignore-errors");
-
-    let filename_l = args.get_str("<directory_one>");
-    let filename_r = args.get_str("<directory_two>");
 
     for entry in WalkDir::new(filename_l) {
         match entry {
@@ -21,7 +16,7 @@ pub fn actual_runtime(args: docopt::ArgvMap) -> i32 {
                 println!("{:?}", entry.path().display());
             },
             Err(error) => {
-                if ignore_io_errors {
+                if ignore_io_errors_flag {
                     continue;
                 }
                 else {
@@ -36,3 +31,12 @@ pub fn actual_runtime(args: docopt::ArgvMap) -> i32 {
 }
 
 
+
+pub fn actual_runtime(args: docopt::ArgvMap) -> i32 {
+    println!("{:?}", args);
+
+    runtime_with_regular_args(args.get_bool("--version"),
+            args.get_bool("--ignore-errors"),
+            args.get_str("<directory_one>"),
+            args.get_str("<directory_two>"))
+}
