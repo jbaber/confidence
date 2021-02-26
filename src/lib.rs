@@ -6,7 +6,7 @@ use std::io::Write;
 const VERSION: &str = "0.1.0";
 
 
-fn runtime_with_regular_args(version_flag: bool, ignore_io_errors_flag: bool,
+pub fn runtime_with_regular_args(version_flag: bool, ignore_io_errors_flag: bool,
         filename_l: &str, filename_r: &str,
         mut writable: impl Write) -> Result<i32, Error> {
     if version_flag {
@@ -17,7 +17,7 @@ fn runtime_with_regular_args(version_flag: bool, ignore_io_errors_flag: bool,
     for entry in WalkDir::new(filename_l) {
         match entry {
             Ok(entry) => {
-                writeln!(writable, "{:?}", entry.path().display())?;
+                writeln!(writable, "{}", entry.path().display())?;
             },
             Err(error) => {
                 if ignore_io_errors_flag {
@@ -43,7 +43,7 @@ pub fn actual_runtime(args: docopt::ArgvMap) -> i32 {
             args.get_bool("--ignore-errors"),
             args.get_str("<directory_one>"),
             args.get_str("<directory_two>"),
-            &mut std::io::stdout()) {
+            std::io::stdout()) {
         Ok(retval) => {
             retval
         },
