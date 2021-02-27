@@ -2,18 +2,12 @@ use walkdir::WalkDir;
 use std::io::Error;
 use std::io::ErrorKind;
 use std::io::Write;
+use clap::ArgMatches;
 
-const VERSION: &str = "0.1.0";
 
-
-pub fn runtime_with_regular_args(version_flag: bool, ignore_io_errors_flag: bool,
-        filename_l: &str, filename_r: &str,
+pub fn runtime_with_regular_args(ignore_io_errors_flag: bool,
+        num_bytes: u64, filename_l: &str, filename_r: Option<&str>,
         mut writable: impl Write) -> Result<i32, Error> {
-    if version_flag {
-        writeln!(writable, "{}", VERSION)?;
-        return Ok(0);
-    }
-
     for entry in WalkDir::new(filename_l) {
         match entry {
             Ok(entry) => {
@@ -36,14 +30,25 @@ pub fn runtime_with_regular_args(version_flag: bool, ignore_io_errors_flag: bool
 
 
 
-pub fn actual_runtime(args: docopt::ArgvMap) -> i32 {
-    println!("{:?}", args);
+pub fn actual_runtime(matches: ArgMatches) -> i32 {
 
-    match runtime_with_regular_args(args.get_bool("--version"),
-            args.get_bool("--ignore-errors"),
-            args.get_str("<directory_one>"),
-            args.get_str("<directory_two>"),
-            std::io::stdout()) {
+    /* Parse and validate arguments */
+    let ignore_io_errors_flag = matches.is_present("ignore-errors");
+    let size_arg = matches.value_of("size").unwrap();
+    let mut num_bytes: u64;
+    if let Ok(number) = size_arg.parse::<u64>() {
+        num_bytes = number;
+    }
+    else {
+        println!("Couldn't interpret '{}' as a number of bytes.", size_arg);
+        return 1;
+    }
+    let filename_l = matches.value_of("directory_one").unwrap();
+    let filename_r = matches.value_of("directory_two");
+
+    /* Run them through the meat of the program */
+    match runtime_with_regular_args(ignore_io_errors_flag, num_bytes,
+            filename_l, filename_r, std::io::stdout()) {
         Ok(retval) => {
             retval
         },
