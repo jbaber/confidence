@@ -1,9 +1,13 @@
 use docopt::Docopt;
 
 const USAGE: &str = "Usage:
+  confidence [options] <directory_one>
   confidence [options] <directory_one> <directory_two>
   confidence (-h | --help)
   confidence --version
+
+Given one directory, output file full of hashes to compare with a future
+directory, or compare a given directory to a provided file full of hashes.
 
 Options:
   -i, --ignore-errors  Ignore read errors so you can skip
