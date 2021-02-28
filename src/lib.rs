@@ -13,21 +13,25 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
             Ok(entry) => {
                 writeln!(writable, "{}", entry.path().display())?;
             },
+
+            /* A lot of dancing around to return a regular io::Error instead of walkdir::Error
+             * Maybe this can be avoided. */
             Err(error) => {
                 match error.io_error() {
                     Some(io_error) => {
-                        match io_error.kind() {
+                        let kind = io_error.kind();
+                        match kind {
                             ErrorKind::NotFound => {
-                                return Err(Error::new(ErrorKind::NotFound, error));
+                                return Err(Error::new(kind, error));
                             },
                             ErrorKind::PermissionDenied => {
                                 if ignore_perm_errors_flag {
                                     continue;
                                 }
-                                return Err(Error::new(ErrorKind::PermissionDenied, error));
+                                return Err(Error::new(kind, error));
                             },
                             _ => {
-                                return Err(Error::new(ErrorKind::Other, error));
+                                return Err(Error::new(kind, error));
                             }
                         }
                     },
