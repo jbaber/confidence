@@ -14,12 +14,16 @@ pub fn runtime_with_regular_args(ignore_io_errors_flag: bool,
                 writeln!(writable, "{}", entry.path().display())?;
             },
             Err(error) => {
-                if ignore_io_errors_flag {
-                    continue;
-                }
-                else {
-                    writeln!(writable, "{}", error.to_string())?;
-                    return Err(Error::new(ErrorKind::Other, error));
+                match error.io_error() {
+                    Some(io_error) => {
+                        continue;
+                    },
+
+                    /* Doesn't correspond to IO error, e.g. cycle following
+                     * symbolic links */
+                    None => {
+                        return Err(Error::new(ErrorKind::Other, error));
+                    }
                 }
             }
         }
@@ -53,7 +57,18 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
             retval
         },
         Err(error) => {
-            println!("{:?}", error);
+            match error.kind() {
+                ErrorKind::NotFound => {
+                    println!("Something else");
+                    match filename_r {
+                        Some(filename) => println!("File named \"{}\" and/or \"{}\" couldn't be found.", filename_l, filename),
+                        None => println!("File named \"{}\" couldn't be found.", filename_l),
+                    }
+                }
+                _ => {
+                    println!("Unexpected error: \"{}\"", error.to_string());
+                }
+            }
             1
         }
     }
