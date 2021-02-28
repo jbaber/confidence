@@ -16,10 +16,20 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
             Err(error) => {
                 match error.io_error() {
                     Some(io_error) => {
-                        if io_error.kind() == ErrorKind::NotFound {
-                            return Err(Error::new(ErrorKind::NotFound, error));
+                        match io_error.kind() {
+                            ErrorKind::NotFound => {
+                                return Err(Error::new(ErrorKind::NotFound, error));
+                            },
+                            ErrorKind::PermissionDenied => {
+                                if ignore_perm_errors_flag {
+                                    continue;
+                                }
+                                return Err(Error::new(ErrorKind::PermissionDenied, error));
+                            },
+                            _ => {
+                                return Err(Error::new(ErrorKind::Other, error));
+                            }
                         }
-                        return Err(Error::new(ErrorKind::Other, error));
                     },
 
                     /* Doesn't correspond to IO error, e.g. cycle following
@@ -60,15 +70,42 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
             retval
         },
         Err(error) => {
+            let outer_error_string = error.to_string();
+            // TODO Any shorthand for this nested chain of matches?  if let?, unwrap, expect, ? 
             match error.kind() {
                 ErrorKind::NotFound => {
                     match filename_r {
                         Some(filename) => println!("File named \"{}\" and/or \"{}\" couldn't be found.", filename_l, filename),
                         None => println!("File named \"{}\" couldn't be found.", filename_l),
                     }
-                }
+                },
+                ErrorKind::PermissionDenied => {
+                    match error.into_inner() {
+                        Some(inner_error) => {
+                            match inner_error.downcast::<walkdir::Error>() {
+                                Ok(inner_inner_error) => {
+                                    match inner_inner_error.path() {
+                                        Some(path) => {
+                                            println!("Permission denied on '{}'.\nIf you want to move past such errors, use '--ignore-permission-errors'", path.display());
+                                        },
+                                        _ => {
+                                            println!("Unexpected error: \"{}\"", outer_error_string);
+                                        }
+                                    }
+                                },
+                                _ => {
+                                    println!("Unexpected error: \"{}\"", outer_error_string);
+                                }
+                            }
+                        },
+                        _ => {
+                            println!("Unexpected error: \"{}\"", outer_error_string);
+                        }
+                    }
+
+                },
                 _ => {
-                    println!("Unexpected error: \"{}\"", error.to_string());
+                    println!("Unexpected error: \"{}\"", outer_error_string);
                 }
             }
             1
