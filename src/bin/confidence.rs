@@ -5,10 +5,10 @@ fn main() {
             .author("John Baber-Lucero <cargo@frundle.com>")
             .about("Given one directory, output file full of hashes to compare with a future
 directory, or compare a given directory to a provided file full of hashes.\nGiven two directories, directly compare the directories' files.")
-            .arg(Arg::with_name("ignore-errors")
+            .arg(Arg::with_name("ignore-permission-errors")
                     .short("i")
-                    .long("ignore-errors")
-                    .help("Ignore read errors so you can skip files you don't have permission to read. Useful for examining everything on a drive that your non-root user can see.")
+                    .long("ignore-permission-errors")
+                    .help("Ignore errors so you can skip files you don't have permission to read. Useful for examining everything on a drive that your non-root user can see.")
                     .takes_value(false)
             ).arg(Arg::with_name("output")
                     .short("o")
