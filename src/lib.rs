@@ -3,6 +3,37 @@ use std::io::Error;
 use std::io::ErrorKind;
 use std::io::Write;
 use clap::ArgMatches;
+use std::path::Path;
+
+
+pub fn handle_one_path(path: &Path, filename_l: &str, filename_r: Option<&str>,
+        writable: &mut impl Write) -> Result<(), Error> {
+    if !path.is_file() {
+        return Ok(());
+    }
+
+    match filename_r {
+
+      /* Directly compare to other directory */
+      Some(filename_r) => {
+        match path.strip_prefix(filename_l) {
+          Ok(main_part) => {
+            writeln!(writable, "Compare {} to {}", Path::new(filename_l).join(main_part).display(), Path::new(filename_r).join(main_part).display())?;
+          },
+          Err(error) => {
+            return Err(Error::new(ErrorKind::Other, error));
+          }
+        }
+      },
+
+      /* Write out a hash for later comparison */
+      None => {
+        writeln!(writable, "{}", path.display())?;
+      }
+    }
+
+    Ok(())
+}
 
 
 pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
@@ -11,11 +42,12 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
     for entry in WalkDir::new(filename_l) {
         match entry {
             Ok(entry) => {
-                writeln!(writable, "{}", entry.path().display())?;
+                handle_one_path(entry.path(), filename_l, filename_r,
+                        &mut writable)?;
             },
 
-            /* A lot of dancing around to return a regular io::Error instead of walkdir::Error
-             * Maybe this can be avoided. */
+            /* A lot of dancing around to return a regular io::Error instead of
+             * walkdir::Error. Maybe this can be avoided. */
             Err(error) => {
                 match error.io_error() {
                     Some(io_error) => {
