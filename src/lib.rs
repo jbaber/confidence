@@ -5,9 +5,8 @@ use std::io::Write;
 use clap::ArgMatches;
 use std::path::Path;
 
-
 pub fn handle_one_path(path: &Path, filename_l: &str, filename_r: Option<&str>,
-        writable: &mut impl Write) -> Result<(), Error> {
+        writable: &mut impl Write, num_vs: u64) -> Result<(), Error> {
     if !path.is_file() {
         return Ok(());
     }
@@ -18,7 +17,13 @@ pub fn handle_one_path(path: &Path, filename_l: &str, filename_r: Option<&str>,
       Some(filename_r) => {
         match path.strip_prefix(filename_l) {
           Ok(main_part) => {
-            writeln!(writable, "Compare {} to {}", Path::new(filename_l).join(main_part).display(), Path::new(filename_r).join(main_part).display())?;
+
+            if num_vs > 1 {
+                writeln!(writable, "Compare {} to {}",
+                        Path::new(filename_l).join(main_part).display(),
+                        Path::new(filename_r).join(main_part).display()
+                )?;
+            }
           },
           Err(error) => {
             return Err(Error::new(ErrorKind::Other, error));
@@ -26,9 +31,10 @@ pub fn handle_one_path(path: &Path, filename_l: &str, filename_r: Option<&str>,
         }
       },
 
+      // TODO
       /* Write out a hash for later comparison */
       None => {
-        writeln!(writable, "{}", path.display())?;
+        writeln!(writable, "Output hash of {}", path.display())?;
       }
     }
 
@@ -38,12 +44,12 @@ pub fn handle_one_path(path: &Path, filename_l: &str, filename_r: Option<&str>,
 
 pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         num_bytes: u64, filename_l: &str, filename_r: Option<&str>,
-        mut writable: impl Write) -> Result<i32, Error> {
+        mut writable: impl Write, num_vs: u64) -> Result<i32, Error> {
     for entry in WalkDir::new(filename_l) {
         match entry {
             Ok(entry) => {
                 handle_one_path(entry.path(), filename_l, filename_r,
-                        &mut writable)?;
+                        &mut writable, num_vs)?;
             },
 
             /* A lot of dancing around to return a regular io::Error instead of
@@ -98,10 +104,11 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
     }
     let filename_l = matches.value_of("directory_one").unwrap();
     let filename_r = matches.value_of("directory_two");
+    let num_vs = matches.occurrences_of("v");
 
     /* Run them through the meat of the program */
     match runtime_with_regular_args(ignore_perm_errors_flag, num_bytes,
-            filename_l, filename_r, std::io::stdout()) {
+            filename_l, filename_r, std::io::stdout(), num_vs) {
         Ok(retval) => {
             retval
         },
