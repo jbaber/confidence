@@ -20,7 +20,7 @@ directory, or compare a given directory to a provided file full of hashes.\nGive
                     .takes_value(true)
                     .help("File to output hashes to (required if only <directory_one> provided)")
             ).arg(Arg::with_name("size")
-                    .help("<directory_one>'s approximate size in bytes")
+                    .help("Approximate total bytes of regular files in <directory_one>. Note: Simply running `du -b directory_one` yields a larger number because directories themselves take up diskspace even when empty.")
                     .required(true)
                     .index(1)
             ).arg(Arg::with_name("directory_one")
