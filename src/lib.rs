@@ -8,17 +8,52 @@ use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use walkdir::WalkDir;
+use sha1;
 
 
-// TODO
-// TODO Handle sizes bigger than u64::MAX
+// TODO Do hashes other than sha1
 /// Returns number of bytes hashed
 /// Writes out hash for later comparison
-// pub fn hash_path(path: &Path, filename_l: &str, writable: &mut impl Write,
-//         num_vs: u64) -> Result<u64, Error>{
-//     writeln!(writable, "Output hash of {}", path.display())?;
-//     Ok(0)
-// }
+pub fn hash_path(path: &Path, writable: &mut impl Write, num_vs: u8) ->
+        Result<usize, Error> {
+    if num_vs > 1 {
+        writeln!(writable, "Output hash of {}", path.display())?;
+    }
+
+    if !path.is_file() {
+        return Ok(0);
+    }
+
+    let mut cur_hash = sha1::Sha1::new();
+    let mut file = File::open(&path)?;
+    let mut buffer: [u8; 32] = [0; 32];
+    let mut num_bytes_hashed: usize = 0;
+    let mut done = false;
+    while !done {
+        let num_bytes_read = file.read(&mut buffer[..])?;
+
+        let bytes_to_hash = &buffer[..num_bytes_read];
+        if num_vs > 2 {
+            writeln!(writable, "Hashing bytes {:?}",
+                    bytes_to_hash)?;
+        }
+
+        cur_hash.update(bytes_to_hash);
+        num_bytes_hashed += num_bytes_read;
+        if num_bytes_read < 32 {
+            done = true;
+        }
+    }
+
+    if num_vs > 1 {
+        writeln!(writable, "Successfully hashed {} bytes",
+                num_bytes_hashed)?;
+    }
+
+    writeln!(writable, "sha1: {}", cur_hash.digest().to_string())?;
+
+    Ok(num_bytes_hashed)
+}
 
 
 // TODO Handle sizes bigger than u64::MAX
@@ -27,7 +62,7 @@ use walkdir::WalkDir;
 /// it's in.  `filename_r` to be a directory that should have a copy
 /// of it.
 pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
-        writable: &mut impl Write, num_vs: u64) -> Result<u64, Error> {
+        writable: &mut impl Write, num_vs: u8) -> Result<usize, Error> {
 
     /* Don't care about directories or symlinks */
     if !path.is_file() {
@@ -65,7 +100,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
             let metadata_r = fs::metadata(&path_r)?;
 
             /* Be happy if they're literally the same file. */
-            let num_bytes_l = metadata_l.len();
+            let num_bytes_l = metadata_l.len() as usize;
             if Handle::from_path(&path_l)? == Handle::from_path(&path_r)? {
                 return Ok(num_bytes_l);
             }
@@ -75,7 +110,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
             let path_r_s = path_r.to_str().unwrap();
 
             /* Be unhappy if they're different sizes */
-            if num_bytes_l != metadata_r.len() {
+            if num_bytes_l != metadata_r.len() as usize {
                 let error_s = "'".to_owned() + path_l.to_str().unwrap() +
                         "' and '" + path_r_s + "' aren't the same size.";
                 writeln!(writable, "{}", error_s)?;
@@ -88,7 +123,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
             let mut buffer_l = [0; 32];
             let mut buffer_r = [0; 32];
 
-            let mut num_bytes_compared = 0;
+            let mut num_bytes_examined = 0;
             let mut done = false;
             while !done {
                 let num_bytes_read_l = file_l.read(&mut buffer_l[..])?;
@@ -113,7 +148,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
                 }
 
                 /* At this point, we've actually compared bytes */
-                num_bytes_compared += num_bytes_l;
+                num_bytes_examined += num_bytes_l;
 
                 if num_bytes_l < 32 {
                     done = true;
@@ -122,9 +157,9 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
 
             if num_vs > 1 {
                 writeln!(writable, "Successfully compared {} bytes",
-                        num_bytes_compared)?;
+                        num_bytes_examined)?;
             }
-            Ok(num_bytes_compared)
+            Ok(num_bytes_examined)
         },
 
         /* filename_l doesn't contain path*/
@@ -137,21 +172,21 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
 
 pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         num_bytes: u64, filename_l: &str, filename_r: Option<&str>,
-        mut writable: impl Write, num_vs: u64) -> Result<i32, Error> {
-    let mut num_bytes_compared = 0;
+        mut writable: impl Write, num_vs: u8) -> Result<i32, Error> {
+    let comparing_paths = filename_r.is_some();
+
+    let mut num_bytes_examined: usize = 0;
     for entry in WalkDir::new(filename_l) {
         match entry {
             Ok(entry) => {
-                match filename_r {
-                    Some(filename_r) => {
-                        num_bytes_compared += compare_paths(entry.path(),
-                                filename_l, filename_r, &mut writable,
-                                num_vs)?;
-                    },
-                    None =>{
-                        // hash_path(entry.path(), filename_l, &mut writable,
-                        //     num_vs)?;
-                    }
+                if comparing_paths {
+                    num_bytes_examined += compare_paths(entry.path(),
+                            filename_l, filename_r.unwrap(), &mut writable,
+                            num_vs)?;
+                }
+                else {
+                    num_bytes_examined += hash_path(entry.path(),
+                            &mut writable, num_vs)?;
                 }
             },
 
@@ -184,9 +219,16 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         }
     }
 
-    writeln!(writable, "{} of {} bytes agree.  ({}% confidence)",
-            num_bytes_compared, num_bytes,
-            (num_bytes_compared as f32 / num_bytes as f32) * 100.0)?;
+    // TODO This should only be written out when comparing to another
+    // directory or a list of hashes
+    if comparing_paths {
+        writeln!(writable, "{} of {} bytes agree.  ({}% confidence)",
+                num_bytes_examined, num_bytes,
+                (num_bytes_examined as f32 / num_bytes as f32) * 100.0)?;
+    }
+    else {
+        writeln!(writable, "{} bytes hashed", num_bytes_examined)?;
+    }
 
     Ok(0)
 }
@@ -208,7 +250,7 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
     }
     let filename_l = matches.value_of("directory_one").unwrap();
     let filename_r = matches.value_of("directory_two");
-    let num_vs = matches.occurrences_of("verbosity");
+    let num_vs = matches.occurrences_of("verbosity") as u8;
 
     /* Run them through the meat of the program */
     match runtime_with_regular_args(ignore_perm_errors_flag, num_bytes,

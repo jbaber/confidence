@@ -13,3 +13,4 @@ edition = "2018"
 clap = {version = "~2.33.0"}
 walkdir = "2"
 same-file = "1.0.0"
+sha1 = "0.6.0"
