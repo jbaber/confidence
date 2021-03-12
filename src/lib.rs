@@ -11,6 +11,41 @@ use walkdir::WalkDir;
 use sha1;
 
 
+/// Returns the hash string and the number of bytes hashed
+pub fn hash_of_path(path: &Path) -> Result<(String, usize), Error> {
+    if !path.is_file() {
+        match path.to_str() {
+            Some(path_s) => {
+                return Err(Error::new(ErrorKind::Other,
+                        path_s.to_owned() + " is not a regular file."));
+            },
+            None => {
+                return Err(Error::new(ErrorKind::Other, "Empty path"));
+            }
+        }
+    }
+
+    let mut cur_hash = sha1::Sha1::new();
+    let mut file = File::open(&path)?;
+    let mut buffer: [u8; 32] = [0; 32];
+    let mut num_bytes_hashed: usize = 0;
+    let mut done = false;
+    while !done {
+        let num_bytes_read = file.read(&mut buffer[..])?;
+
+        let bytes_to_hash = &buffer[..num_bytes_read];
+
+        cur_hash.update(bytes_to_hash);
+        num_bytes_hashed += num_bytes_read;
+        if num_bytes_read < 32 {
+            done = true;
+        }
+    }
+
+    Ok((cur_hash.digest().to_string(), num_bytes_hashed))
+}
+
+
 // TODO Do hashes other than sha1
 /// Returns number of bytes hashed
 /// Writes out hash for later comparison
@@ -24,35 +59,19 @@ pub fn hash_path(path: &Path, writable: &mut impl Write, num_vs: u8) ->
         return Ok(0);
     }
 
-    let mut cur_hash = sha1::Sha1::new();
-    let mut file = File::open(&path)?;
-    let mut buffer: [u8; 32] = [0; 32];
-    let mut num_bytes_hashed: usize = 0;
-    let mut done = false;
-    while !done {
-        let num_bytes_read = file.read(&mut buffer[..])?;
+    let possibly_error = hash_of_path(path);
 
-        let bytes_to_hash = &buffer[..num_bytes_read];
-        if num_vs > 2 {
-            writeln!(writable, "Hashing bytes {:?}",
-                    bytes_to_hash)?;
-        }
-
-        cur_hash.update(bytes_to_hash);
-        num_bytes_hashed += num_bytes_read;
-        if num_bytes_read < 32 {
-            done = true;
-        }
+    match possibly_error {
+        Ok((cur_hash, num_bytes_hashed)) => {
+            if num_vs > 1 {
+                writeln!(writable, "Successfully hashed {} bytes",
+                        num_bytes_hashed)?;
+            }
+            writeln!(writable, "sha1: {}", cur_hash)?;
+            Ok(num_bytes_hashed)
+        },
+        Err(error) => Err(error)
     }
-
-    if num_vs > 1 {
-        writeln!(writable, "Successfully hashed {} bytes",
-                num_bytes_hashed)?;
-    }
-
-    writeln!(writable, "sha1: {}", cur_hash.digest().to_string())?;
-
-    Ok(num_bytes_hashed)
 }
 
 
