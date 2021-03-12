@@ -287,10 +287,24 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
     let filename_l = matches.value_of("directory_one").unwrap();
     let filename_r = matches.value_of("directory_two");
     let num_vs = matches.occurrences_of("verbosity") as u8;
+    let output_file = match matches.value_of("output") {
+        Some(filename) => {
+            match File::create(filename) {
+                Ok(file) => {
+                    Box::new(file) as Box<Write>
+                },
+                Err(_error) => {
+                    println!("Couldn't open '{}' for writing.", filename);
+                    return 2;
+                }
+            }
+        },
+        None => Box::new(std::io::stdout()) as Box<Write>,
+    };
 
     /* Run them through the meat of the program */
     match runtime_with_regular_args(ignore_perm_errors_flag, num_bytes,
-            filename_l, filename_r, std::io::stdout(), num_vs) {
+            filename_l, filename_r, output_file, num_vs) {
         Ok(retval) => {
             retval
         },

@@ -18,7 +18,7 @@ directory, or compare a given directory to a provided file full of hashes.\nGive
                     .short("o")
                     .long("output-filename")
                     .takes_value(true)
-                    .help("File to output hashes to (required if only <directory_one> provided)")
+                    .help("File to output hashes to if only <directory_one> provided.  Defaults to STDOUT")
             ).arg(Arg::with_name("size")
                     .help("Approximate total number of bytes of regular files in <directory_one>. Note: Simply running `du -b directory_one` yields a larger number because directories themselves take up diskspace even when empty.")
                     .short("s")
