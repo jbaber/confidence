@@ -190,7 +190,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
 
 
 pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
-        num_bytes: u64, filename_l: &str, filename_r: Option<&str>,
+        num_bytes: Option<usize>, filename_l: &str, filename_r: Option<&str>,
         mut writable: impl Write, num_vs: u8) -> Result<i32, Error> {
     let comparing_paths = filename_r.is_some();
 
@@ -241,9 +241,17 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
     // TODO This should only be written out when comparing to another
     // directory or a list of hashes
     if comparing_paths {
-        writeln!(writable, "{} of {} bytes agree.  ({}% confidence)",
-                num_bytes_examined, num_bytes,
-                (num_bytes_examined as f32 / num_bytes as f32) * 100.0)?;
+        match num_bytes {
+            Some(num_bytes) => {
+                writeln!(writable, "{} of {} bytes agree.  ({}% confidence)",
+                        num_bytes_examined, num_bytes,
+                        (num_bytes_examined as f32 / num_bytes as f32) * 100.0)?;
+            },
+            None => {
+                writeln!(writable, "{} bytes agree.",
+                        num_bytes_examined)?;
+            }
+        }
     }
     else {
         writeln!(writable, "{} bytes hashed", num_bytes_examined)?;
@@ -257,16 +265,25 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
 pub fn actual_runtime(matches: ArgMatches) -> i32 {
 
     /* Parse and validate arguments */
-    let ignore_perm_errors_flag = matches.is_present("ignore-permission-errors");
-    let size_arg = matches.value_of("size").unwrap();
-    let num_bytes: u64;
-    if let Ok(number) = size_arg.parse::<u64>() {
-        num_bytes = number;
+    let ignore_perm_errors_flag =
+            matches.is_present("ignore-permission-errors");
+    let num_bytes: Option<usize>;
+    match matches.value_of("size") {
+        Some(size_arg) => {
+            if let Ok(number) = size_arg.parse::<usize>() {
+                num_bytes = Some(number);
+            }
+            else {
+                println!("Couldn't interpret '{}' as a number of bytes.",
+                        size_arg);
+                return 1;
+            }
+        },
+        None => {
+            num_bytes = None;
+        }
     }
-    else {
-        println!("Couldn't interpret '{}' as a number of bytes.", size_arg);
-        return 1;
-    }
+
     let filename_l = matches.value_of("directory_one").unwrap();
     let filename_r = matches.value_of("directory_two");
     let num_vs = matches.occurrences_of("verbosity") as u8;

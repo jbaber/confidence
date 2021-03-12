@@ -3,7 +3,7 @@ use confidence::runtime_with_regular_args;
 #[test]
 fn test_dir_0() {
     let mut stdout = Vec::new();
-    let result = runtime_with_regular_args(true, 19, "tests/test_dir_0",
+    let result = runtime_with_regular_args(true, Some(19), "tests/test_dir_0",
             Some("tests/test_dir_1"), &mut stdout, 3);
     assert_eq!(result.unwrap(), 0);
 

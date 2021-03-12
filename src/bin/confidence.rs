@@ -20,17 +20,18 @@ directory, or compare a given directory to a provided file full of hashes.\nGive
                     .takes_value(true)
                     .help("File to output hashes to (required if only <directory_one> provided)")
             ).arg(Arg::with_name("size")
-                    .help("Approximate total bytes of regular files in <directory_one>. Note: Simply running `du -b directory_one` yields a larger number because directories themselves take up diskspace even when empty.")
-                    .required(true)
-                    .index(1)
+                    .help("Approximate total number of bytes of regular files in <directory_one>. Note: Simply running `du -b directory_one` yields a larger number because directories themselves take up diskspace even when empty.")
+                    .short("s")
+                    .long("size")
+                    .takes_value(true)
             ).arg(Arg::with_name("directory_one")
                     .required(true)
-                    .index(2)
+                    .index(1)
             ).arg(Arg::with_name("directory_two")
                     .help("If present, we'll just directly compare <directory_one> and <directory_two>")
                     .required(false)
+                    .index(2)
                     .conflicts_with("output")
-                    .index(3)
             ).get_matches();
 
 
