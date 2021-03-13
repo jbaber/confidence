@@ -1,0 +1,3 @@
+- Add a command that finds the number of bytes in files only
+- Use serde to serialize the actual Path object so you don't have to worry about paths with spaces, etc.
+- Note how many bytes per file in hashes file so that that can be compared before bothering to hash
