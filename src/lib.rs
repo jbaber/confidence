@@ -2,9 +2,13 @@ use clap::ArgMatches;
 use same_file::Handle;
 use std::fs;
 use std::fs::File;
+use std::io::BufReader;
+use std::io::BufRead;
 use std::io::Error;
 use std::io::ErrorKind;
 use std::io::Read;
+use std::io::Seek;
+use std::io::SeekFrom;
 use std::io::Write;
 use std::path::Path;
 use walkdir::WalkDir;
@@ -49,8 +53,8 @@ pub fn hash_of_path(path: &Path) -> Result<(String, usize), Error> {
 // TODO Do hashes other than sha1
 /// Returns number of bytes hashed
 /// Writes out hash for later comparison
-pub fn hash_path(path: &Path, writable: &mut impl Write, num_vs: u8) ->
-        Result<usize, Error> {
+pub fn hash_path(path: &Path, filename_l: &str,
+        writable: &mut impl Write, num_vs: u8) -> Result<usize, Error> {
     if num_vs > 1 {
         writeln!(writable, "Output hash of {}", path.display())?;
     }
@@ -70,7 +74,16 @@ pub fn hash_path(path: &Path, writable: &mut impl Write, num_vs: u8) ->
 
             // TODO Maybe use serde or something so the path isn't just
             // whatever'd be displayed?  (Weirdo unicode characters, etc.)
-            writeln!(writable, "sha1: {} {}", cur_hash, path.display())?;
+            match path.strip_prefix(filename_l) {
+                Ok(main_part) => {
+                    writeln!(writable, "sha1: {} {}", cur_hash,
+                            main_part.display())?;
+                },
+                Err(error) => {
+                    return Err(Error::new(ErrorKind::Other, error));
+                }
+
+            }
             Ok(num_bytes_hashed)
         },
         Err(error) => Err(error)
@@ -195,9 +208,122 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
 /// Return number of bytes 
 pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         num_bytes: Option<usize>, filename_l: &str, filename_r: Option<&str>,
-        mut writable: impl Write, num_vs: u8) ->
+        hashes_filename: Option<&str>, mut writable: impl Write, num_vs: u8) ->
         Result<i32, Error> {
     let comparing_paths = filename_r.is_some();
+    let comparing_hashes = hashes_filename.is_some();
+
+    if comparing_hashes {
+        let hashes_filename = hashes_filename.unwrap();
+        if num_vs > 1 {
+            writeln!(writable, "Reading {}", hashes_filename)?;
+        }
+        let hashes_path = Path::new(hashes_filename);
+        let mut hashes_file = File::open(&hashes_path)?;
+
+        /* Seek to last line to get number of bytes
+         * Iterate backwards from final byte to find
+         * the last \n, then read forward to get last
+         * line.  If it's formatted correctly, it tells
+         * you how many bytes were hashed.
+         *
+         * TODO Care about crlf or whatever. */
+        let metadata = hashes_file.metadata()?;
+        let mut last_line_byte_num: u64 = 0;
+        let hashes_file_num_bytes = metadata.len();
+        let mut cur_byte = [0];
+
+        /* Last byte usually *is* a newline in unix, so start at penultimate byte */
+        for byte_num in (0..hashes_file_num_bytes - 1).rev() {
+            hashes_file.seek(SeekFrom::Start(byte_num))?;
+            let num_bytes_read = hashes_file.read(&mut cur_byte)?;
+            if num_bytes_read != 1 {
+                writeln!(writable, "Couldn't read from file")?;
+                return Ok(3);
+            }
+            if cur_byte[0] == 0x0a {
+                last_line_byte_num = byte_num;
+                break;
+            }
+        }
+
+        /* If we haven't errored out, we're on the last line */
+        hashes_file.seek(SeekFrom::Start(last_line_byte_num + 1))?;
+        let mut last_line = String::new();
+        hashes_file.read_to_string(&mut last_line)?;
+        let pieces = last_line.split_whitespace().collect::<Vec<_>>();
+        if pieces.len() != 3 || pieces[1] != "bytes" || pieces[2] != "hashed" {
+            writeln!(writable, "Corrupt file (doesn't end with 'XXX bytes hashed')")?;
+            return Ok(4);
+        }
+
+        let num_bytes_hashed = pieces[0].parse::<u64>();
+        if num_bytes_hashed.is_err() {
+            writeln!(writable, "Couldn't interpret {} as a non-zero integer", pieces[0])?;
+            return Ok(5);
+        }
+
+        let num_bytes_hashed = num_bytes_hashed.unwrap();
+        if num_vs > 0 {
+            writeln!(writable, "Num bytes previously hashed: {}", num_bytes_hashed)?;
+        }
+
+        /* Iterate line by line (except the final line */
+        hashes_file.seek(SeekFrom::Start(0))?;
+        let reader = BufReader::new(hashes_file);
+        let mut num_bytes_compared: usize = 0;
+        for line in reader.lines() {
+            let line = line.unwrap();
+            let pieces = line.split_whitespace().collect::<Vec<_>>();
+
+            /* Quit at last line */
+            if pieces.len() == 3 && pieces[1] == "bytes" && pieces[2] == "hashed" {
+                break;
+            }
+
+            let sha1 = pieces[1];
+            let path = Path::new(filename_l).join(Path::new(pieces[2]));
+            if num_vs > 1 {
+                writeln!(writable, "Examining {}", path.display())?;
+            }
+            match hash_of_path(&path) {
+                Ok(hash_and_size) => {
+                    let hash_s = hash_and_size.0;
+                    let num_bytes_hashed = hash_and_size.1;
+                    if sha1 == hash_s {
+                        num_bytes_compared += num_bytes_hashed;
+                        if num_vs > 1 {
+                            writeln!(writable, "{} bytes compared so far",
+                                    num_bytes_compared)?;
+                        }
+                    }
+                    else {
+                        return Ok(6);
+                    }
+                },
+                Err(error) => {
+                    writeln!(writable, "Couldn't hash {}", path.display())?;
+                    return Err(Error::new(ErrorKind::Other, error));
+                }
+            }
+        }
+
+        match num_bytes {
+            Some(num_bytes) => {
+                writeln!(writable,
+                        "Successfully compared {}/{} bytes ({}% confidence)",
+                        num_bytes_compared, num_bytes,
+                        ((num_bytes_compared as f32 / num_bytes as f32) * 100.0))?;
+            },
+            None => {
+                writeln!(writable, "Successfully compared {} bytes.",
+                        num_bytes_compared)?;
+            }
+        }
+        return Ok(0);
+    }
+
+    /* Otherwise, walk the tree now */
 
     let mut num_bytes_examined: usize = 0;
     for entry in WalkDir::new(filename_l) {
@@ -209,7 +335,7 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                             num_vs)?;
                 }
                 else {
-                    num_bytes_examined += hash_path(entry.path(),
+                    num_bytes_examined += hash_path(entry.path(), filename_l,
                             &mut writable, num_vs)?;
                 }
             },
@@ -292,6 +418,7 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
     let filename_l = matches.value_of("directory_one").unwrap();
     let filename_r = matches.value_of("directory_two");
     let num_vs = matches.occurrences_of("verbosity") as u8;
+    let input_filename = matches.value_of("input");
     let output_file = match matches.value_of("output") {
         Some(filename) => {
             match File::create(filename) {
@@ -309,7 +436,7 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
 
     /* Run them through the meat of the program */
     match runtime_with_regular_args(ignore_perm_errors_flag, num_bytes,
-            filename_l, filename_r, output_file, num_vs) {
+            filename_l, filename_r, input_filename, output_file, num_vs) {
         Ok(retval) => {
             retval
         },
@@ -330,7 +457,7 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
                                 Ok(inner_inner_error) => {
                                     match inner_inner_error.path() {
                                         Some(path) => {
-                                            println!("Permission denied on '{}'.\nIf you want to move past such errors, use '--ignore-permission-errors'", path.display());
+                                            println!("Permission denied on '{}' -- aborting.\nIf you want to move past such errors, use '--ignore-permission-errors'", path.display());
                                         },
                                         _ => {
                                             println!("Unexpected error: \"{}\"", outer_error_string);
