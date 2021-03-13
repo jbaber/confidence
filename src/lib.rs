@@ -189,9 +189,11 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
 }
 
 
+/// Return number of bytes 
 pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         num_bytes: Option<usize>, filename_l: &str, filename_r: Option<&str>,
-        mut writable: impl Write, num_vs: u8) -> Result<i32, Error> {
+        mut writable: impl Write, num_vs: u8) ->
+        Result<i32, Error> {
     let comparing_paths = filename_r.is_some();
 
     let mut num_bytes_examined: usize = 0;
@@ -291,7 +293,7 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
         Some(filename) => {
             match File::create(filename) {
                 Ok(file) => {
-                    Box::new(file) as Box<Write>
+                    Box::new(file) as Box<dyn Write>
                 },
                 Err(_error) => {
                     println!("Couldn't open '{}' for writing.", filename);
@@ -299,7 +301,7 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
                 }
             }
         },
-        None => Box::new(std::io::stdout()) as Box<Write>,
+        None => Box::new(std::io::stdout()) as Box<dyn Write>,
     };
 
     /* Run them through the meat of the program */
