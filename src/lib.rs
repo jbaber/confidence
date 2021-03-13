@@ -67,7 +67,10 @@ pub fn hash_path(path: &Path, writable: &mut impl Write, num_vs: u8) ->
                 writeln!(writable, "Successfully hashed {} bytes",
                         num_bytes_hashed)?;
             }
-            writeln!(writable, "sha1: {}", cur_hash)?;
+
+            // TODO Maybe use serde or something so the path isn't just
+            // whatever'd be displayed?  (Weirdo unicode characters, etc.)
+            writeln!(writable, "sha1: {} {}", cur_hash, path.display())?;
             Ok(num_bytes_hashed)
         },
         Err(error) => Err(error)
