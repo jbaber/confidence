@@ -4,7 +4,7 @@ fn main() {
     let matches = App::new("confidence").version("0.1.0")
             .author("John Baber-Lucero <cargo@frundle.com>")
             .about("Given one directory, output file full of hashes to compare with a future
-directory, or compare a given directory to a provided file full of hashes.\nGiven two directories, directly compare the directories' files.")
+directory or compare to a provided file full of hashes.\nGiven two directories, directly compare the directories' files.")
             .arg(Arg::with_name("ignore-permission-errors")
                     .short("i")
                     .long("ignore-permission-errors")
