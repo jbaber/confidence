@@ -293,7 +293,32 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
             }
 
             let sha1 = pieces[1];
-            let path = Path::new(filename_l).join(Path::new(pieces[2]));
+
+            /* Un-base64 the path to a regular string.  Unix specific */
+            let path_vec_u8 = base64::decode(pieces[2]);
+            let path_s: String;
+            match path_vec_u8 {
+                Ok(u8s) => {
+                    let possibly_path_s = std::str::from_utf8(&u8s);
+                    match possibly_path_s {
+                        Ok(s) => {
+                            path_s = s.to_owned();
+                        }
+                        Err(error) => {
+                            writeln!(writable,
+                                    "Couldn't convert bytes from unbased64'd {} to a path",
+                                    pieces[2])?;
+                            return Err(Error::new(ErrorKind::Other, error));
+                        }
+                    }
+                }
+                Err(error) => {
+                    writeln!(writable, "Couldn't unbase64 {} to a path",
+                            pieces[2])?;
+                    return Err(Error::new(ErrorKind::Other, error));
+                }
+            }
+            let path = Path::new(filename_l).join(Path::new(&path_s));
             if num_vs > 1 {
                 writeln!(writable, "Examining {}", path.display())?;
             }
