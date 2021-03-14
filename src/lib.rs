@@ -322,6 +322,18 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
             if num_vs > 1 {
                 writeln!(writable, "Examining {}", path.display())?;
             }
+
+            // TODO
+            // START HERE
+            // Find the filesize and possibly leave the file open
+            // and make hash_of_path take an open file instead of
+            // a path
+            /* Don't bother to hash if filesizes don't match */
+            // let mut hashes_file = File::open(&hashes_path)?;
+            // let metadata = hashes_file.metadata()?;
+            // let mut last_line_byte_num: u64 = 0;
+            // let hashes_file_num_bytes = metadata.len();
+
             match hash_of_path(&path) {
                 Ok(hash_and_size) => {
                     let hash_s = hash_and_size.0;
