@@ -268,7 +268,7 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
             writeln!(writable, "Num bytes previously hashed: {}", num_bytes_hashed)?;
         }
 
-        /* Iterate line by line (except the final line */
+        /* Iterate line by line (except the final line) */
         hashes_file.seek(SeekFrom::Start(0))?;
         let reader = BufReader::new(hashes_file);
         let mut num_bytes_compared: usize = 0;
@@ -334,6 +334,8 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                             filename_l, filename_r.unwrap(), &mut writable,
                             num_vs)?;
                 }
+
+                /* This is the generated hashes case */
                 else {
                     num_bytes_examined += hash_path(entry.path(), filename_l,
                             &mut writable, num_vs)?;
