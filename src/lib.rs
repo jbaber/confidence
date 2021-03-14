@@ -13,6 +13,7 @@ use std::io::Write;
 use std::path::Path;
 use walkdir::WalkDir;
 use sha1;
+use base64;
 
 
 /// Returns the hash string and the number of bytes hashed
@@ -76,8 +77,18 @@ pub fn hash_path(path: &Path, filename_l: &str,
             // whatever'd be displayed?  (Weirdo unicode characters, etc.)
             match path.strip_prefix(filename_l) {
                 Ok(main_part) => {
-                    writeln!(writable, "sha1: {} {}", cur_hash,
-                            main_part.display())?;
+
+                    /* Get the path as a string, then base64 it so it has no spaces
+                     * When it's read back into a Path, it'll have to be converted
+                     * from a vector of u8's (this is unix specific!) to an OsStr */
+                    if let Some(path_s) = main_part.to_str() {
+                        writeln!(writable, "sha1: {} {} {}", cur_hash,
+                                base64::encode(path_s), num_bytes_hashed)?;
+                    }
+                    else {
+                        return Err(Error::new(ErrorKind::Other,
+                                "Could not cast path to a string"));
+                    }
                 },
                 Err(error) => {
                     return Err(Error::new(ErrorKind::Other, error));
