@@ -224,6 +224,7 @@ pub fn last_line_of(mut open_file: &std::fs::File) -> Result<String, Error> {
     /* Seek to last line.  Iterate backwards from final byte to find
      * the penultimate \n, then read forward to get last line.
      * TODO Care about crlf or whatever. */
+    let original_position = open_file.seek(SeekFrom::Current(0))?;
     let metadata = open_file.metadata()?;
     let mut last_line_byte_num: u64 = 0;
     let hashes_file_num_bytes = metadata.len();
@@ -248,6 +249,7 @@ pub fn last_line_of(mut open_file: &std::fs::File) -> Result<String, Error> {
     open_file.seek(SeekFrom::Start(last_line_byte_num + 1))?;
     let mut last_line = String::new();
     let _ = open_file.read_to_string(&mut last_line);
+    open_file.seek(SeekFrom::Start(original_position))?;
 
     Ok(last_line)
 }
@@ -285,7 +287,6 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
     }
 
     /* Iterate line by line (except the final line) */
-    hashes_file.seek(SeekFrom::Start(0))?;
     let reader = BufReader::new(hashes_file);
     let mut num_bytes_compared: usize = 0;
     for line in reader.lines() {
