@@ -272,6 +272,33 @@ pub fn bytes_from_last_line(last_line: &str) -> Result<usize, Error> {
 }
 
 
+pub fn path_string_from_b64(b64: &str) -> Result<String, Error> {
+    let path_vec_u8 = base64::decode(b64);
+    let path_s: String;
+    match path_vec_u8 {
+        Ok(u8s) => {
+            let possibly_path_s = std::str::from_utf8(&u8s);
+            match possibly_path_s {
+                Ok(s) => {
+                    path_s = s.to_owned();
+                }
+                Err(_) => {
+                    let err_s = "Couldn't convert bytes from unbased64'd {} t\
+                            o a path".to_owned() + b64;
+                    return Err(Error::new(ErrorKind::Other, err_s));
+                }
+            }
+        }
+        Err(_) => {
+            let err_s = "Couldn't unbase64 ".to_owned() + b64 + " to a path";
+            return Err(Error::new(ErrorKind::Other, err_s));
+        }
+    }
+
+    Ok(path_s)
+}
+
+
 pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
         num_bytes: Option<usize>, mut writable: impl Write) ->
         Result<i32, Error> {
@@ -279,9 +306,8 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
         writeln!(writable, "Reading {}", hashes_filename)?;
     }
     let hashes_path = Path::new(hashes_filename);
-    let mut hashes_file = File::open(&hashes_path)?;
-    let last_line = last_line_of(&hashes_file)?;
-    let num_bytes_hashed = bytes_from_last_line(&last_line)?;
+    let hashes_file = File::open(&hashes_path)?;
+    let num_bytes_hashed = bytes_from_last_line(&last_line_of(&hashes_file)?)?;
     if num_vs > 0 {
         writeln!(writable, "Num bytes previously hashed: {}", num_bytes_hashed)?;
     }
@@ -301,30 +327,9 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
         let sha1 = pieces[1];
 
         /* Un-base64 the path to a regular string.  Unix specific */
-        let path_vec_u8 = base64::decode(pieces[2]);
-        let path_s: String;
-        match path_vec_u8 {
-            Ok(u8s) => {
-                let possibly_path_s = std::str::from_utf8(&u8s);
-                match possibly_path_s {
-                    Ok(s) => {
-                        path_s = s.to_owned();
-                    }
-                    Err(error) => {
-                        writeln!(writable,
-                                "Couldn't convert bytes from unbased64'd {} to a path",
-                                pieces[2])?;
-                        return Err(Error::new(ErrorKind::Other, error));
-                    }
-                }
-            }
-            Err(error) => {
-                writeln!(writable, "Couldn't unbase64 {} to a path",
-                        pieces[2])?;
-                return Err(Error::new(ErrorKind::Other, error));
-            }
-        }
-        let path = Path::new(directory).join(Path::new(&path_s));
+        let unbased = path_string_from_b64(pieces[2])?;
+        let path = Path::new(directory).join(Path::new(&unbased));
+
         if num_vs > 1 {
             writeln!(writable, "Examining {}", path.display())?;
         }
