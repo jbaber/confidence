@@ -216,6 +216,167 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
 }
 
 
+
+/// Returns last line of `open_file` as a String
+/// Ignores the last `\n` that's usually there in unix.
+pub fn last_line_of(mut open_file: &std::fs::File) -> Result<String, Error> {
+
+    /* Seek to last line.  Iterate backwards from final byte to find
+     * the penultimate \n, then read forward to get last line.
+     * TODO Care about crlf or whatever. */
+    let metadata = open_file.metadata()?;
+    let mut last_line_byte_num: u64 = 0;
+    let hashes_file_num_bytes = metadata.len();
+    let mut cur_byte = [0];
+
+    /* Last byte usually *is* a newline in unix, so start at penultimate
+     * byte */
+    for byte_num in (0..hashes_file_num_bytes - 1).rev() {
+        open_file.seek(SeekFrom::Start(byte_num))?;
+        let num_bytes_read = open_file.read(&mut cur_byte)?;
+        if num_bytes_read != 1 {
+            return Err(Error::new(ErrorKind::Other,
+                    "Couldn't read from file"));
+        }
+        if cur_byte[0] == 0x0a {
+            last_line_byte_num = byte_num;
+            break;
+        }
+    }
+
+    /* If we haven't errored out, we're on the last line */
+    open_file.seek(SeekFrom::Start(last_line_byte_num + 1))?;
+    let mut last_line = String::new();
+    let _ = open_file.read_to_string(&mut last_line);
+
+    Ok(last_line)
+}
+
+
+pub fn bytes_from_last_line(last_line: &str) -> Result<usize, Error> {
+    let pieces = last_line.split_whitespace().collect::<Vec<_>>();
+    if pieces.len() != 3 || pieces[1] != "bytes" || pieces[2] != "hashed" {
+        return Err(Error::new(ErrorKind::Other,
+                "Corrupt file (doesn't end with 'XXX bytes hashed')"));
+    }
+
+    let num_bytes_hashed = pieces[0].parse::<usize>();
+    if num_bytes_hashed.is_err() {
+        let err_s = "Can't interpret ".to_owned() + pieces[0] + " as an integer.";
+        return Err(Error::new(ErrorKind::Other, err_s));
+    }
+
+    Ok(num_bytes_hashed.unwrap())
+}
+
+
+pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
+        num_bytes: Option<usize>, mut writable: impl Write) ->
+        Result<i32, Error> {
+    if num_vs > 1 {
+        writeln!(writable, "Reading {}", hashes_filename)?;
+    }
+    let hashes_path = Path::new(hashes_filename);
+    let mut hashes_file = File::open(&hashes_path)?;
+    let last_line = last_line_of(&hashes_file)?;
+    let num_bytes_hashed = bytes_from_last_line(&last_line)?;
+    if num_vs > 0 {
+        writeln!(writable, "Num bytes previously hashed: {}", num_bytes_hashed)?;
+    }
+
+    /* Iterate line by line (except the final line) */
+    hashes_file.seek(SeekFrom::Start(0))?;
+    let reader = BufReader::new(hashes_file);
+    let mut num_bytes_compared: usize = 0;
+    for line in reader.lines() {
+        let line = line.unwrap();
+        let pieces = line.split_whitespace().collect::<Vec<_>>();
+
+        /* Quit at last line */
+        if pieces.len() == 3 && pieces[1] == "bytes" && pieces[2] == "hashed" {
+            break;
+        }
+
+        let sha1 = pieces[1];
+
+        /* Un-base64 the path to a regular string.  Unix specific */
+        let path_vec_u8 = base64::decode(pieces[2]);
+        let path_s: String;
+        match path_vec_u8 {
+            Ok(u8s) => {
+                let possibly_path_s = std::str::from_utf8(&u8s);
+                match possibly_path_s {
+                    Ok(s) => {
+                        path_s = s.to_owned();
+                    }
+                    Err(error) => {
+                        writeln!(writable,
+                                "Couldn't convert bytes from unbased64'd {} to a path",
+                                pieces[2])?;
+                        return Err(Error::new(ErrorKind::Other, error));
+                    }
+                }
+            }
+            Err(error) => {
+                writeln!(writable, "Couldn't unbase64 {} to a path",
+                        pieces[2])?;
+                return Err(Error::new(ErrorKind::Other, error));
+            }
+        }
+        let path = Path::new(directory).join(Path::new(&path_s));
+        if num_vs > 1 {
+            writeln!(writable, "Examining {}", path.display())?;
+        }
+
+        // TODO
+        // START HERE
+        // Find the filesize and possibly leave the file open
+        // and make hash_of_path take an open file instead of
+        // a path
+        /* Don't bother to hash if filesizes don't match */
+        // let mut hashes_file = File::open(&hashes_path)?;
+        // let metadata = hashes_file.metadata()?;
+        // let mut last_line_byte_num: u64 = 0;
+        // let hashes_file_num_bytes = metadata.len();
+
+        match hash_of_path(&path) {
+            Ok(hash_and_size) => {
+                let hash_s = hash_and_size.0;
+                let num_bytes_hashed = hash_and_size.1;
+                if sha1 == hash_s {
+                    num_bytes_compared += num_bytes_hashed;
+                    if num_vs > 1 {
+                        writeln!(writable, "{} bytes compared so far",
+                                num_bytes_compared)?;
+                    }
+                }
+                else {
+                    return Ok(6);
+                }
+            },
+            Err(error) => {
+                writeln!(writable, "Couldn't hash {}", path.display())?;
+                return Err(Error::new(ErrorKind::Other, error));
+            }
+        }
+    }
+
+    match num_bytes {
+        Some(num_bytes) => {
+            writeln!(writable,
+                    "Successfully compared {}/{} bytes ({}% confidence)",
+                    num_bytes_compared, num_bytes,
+                    ((num_bytes_compared as f32 / num_bytes as f32) * 100.0))?;
+        },
+        None => {
+            writeln!(writable, "Successfully compared {} bytes.",
+                    num_bytes_compared)?;
+        }
+    }
+    return Ok(0);
+}
+
+
 /// Return number of bytes 
 pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         num_bytes: Option<usize>, filename_l: &str, filename_r: Option<&str>,
@@ -225,150 +386,7 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
     let comparing_hashes = hashes_filename.is_some();
 
     if comparing_hashes {
-        let hashes_filename = hashes_filename.unwrap();
-        if num_vs > 1 {
-            writeln!(writable, "Reading {}", hashes_filename)?;
-        }
-        let hashes_path = Path::new(hashes_filename);
-        let mut hashes_file = File::open(&hashes_path)?;
-
-        /* Seek to last line to get number of bytes
-         * Iterate backwards from final byte to find
-         * the last \n, then read forward to get last
-         * line.  If it's formatted correctly, it tells
-         * you how many bytes were hashed.
-         *
-         * TODO Care about crlf or whatever. */
-        let metadata = hashes_file.metadata()?;
-        let mut last_line_byte_num: u64 = 0;
-        let hashes_file_num_bytes = metadata.len();
-        let mut cur_byte = [0];
-
-        /* Last byte usually *is* a newline in unix, so start at penultimate byte */
-        for byte_num in (0..hashes_file_num_bytes - 1).rev() {
-            hashes_file.seek(SeekFrom::Start(byte_num))?;
-            let num_bytes_read = hashes_file.read(&mut cur_byte)?;
-            if num_bytes_read != 1 {
-                writeln!(writable, "Couldn't read from file")?;
-                return Ok(3);
-            }
-            if cur_byte[0] == 0x0a {
-                last_line_byte_num = byte_num;
-                break;
-            }
-        }
-
-        /* If we haven't errored out, we're on the last line */
-        hashes_file.seek(SeekFrom::Start(last_line_byte_num + 1))?;
-        let mut last_line = String::new();
-        hashes_file.read_to_string(&mut last_line)?;
-        let pieces = last_line.split_whitespace().collect::<Vec<_>>();
-        if pieces.len() != 3 || pieces[1] != "bytes" || pieces[2] != "hashed" {
-            writeln!(writable, "Corrupt file (doesn't end with 'XXX bytes hashed')")?;
-            return Ok(4);
-        }
-
-        let num_bytes_hashed = pieces[0].parse::<u64>();
-        if num_bytes_hashed.is_err() {
-            writeln!(writable, "Couldn't interpret {} as a non-zero integer", pieces[0])?;
-            return Ok(5);
-        }
-
-        let num_bytes_hashed = num_bytes_hashed.unwrap();
-        if num_vs > 0 {
-            writeln!(writable, "Num bytes previously hashed: {}", num_bytes_hashed)?;
-        }
-
-        /* Iterate line by line (except the final line) */
-        hashes_file.seek(SeekFrom::Start(0))?;
-        let reader = BufReader::new(hashes_file);
-        let mut num_bytes_compared: usize = 0;
-        for line in reader.lines() {
-            let line = line.unwrap();
-            let pieces = line.split_whitespace().collect::<Vec<_>>();
-
-            /* Quit at last line */
-            if pieces.len() == 3 && pieces[1] == "bytes" && pieces[2] == "hashed" {
-                break;
-            }
-
-            let sha1 = pieces[1];
-
-            /* Un-base64 the path to a regular string.  Unix specific */
-            let path_vec_u8 = base64::decode(pieces[2]);
-            let path_s: String;
-            match path_vec_u8 {
-                Ok(u8s) => {
-                    let possibly_path_s = std::str::from_utf8(&u8s);
-                    match possibly_path_s {
-                        Ok(s) => {
-                            path_s = s.to_owned();
-                        }
-                        Err(error) => {
-                            writeln!(writable,
-                                    "Couldn't convert bytes from unbased64'd {} to a path",
-                                    pieces[2])?;
-                            return Err(Error::new(ErrorKind::Other, error));
-                        }
-                    }
-                }
-                Err(error) => {
-                    writeln!(writable, "Couldn't unbase64 {} to a path",
-                            pieces[2])?;
-                    return Err(Error::new(ErrorKind::Other, error));
-                }
-            }
-            let path = Path::new(filename_l).join(Path::new(&path_s));
-            if num_vs > 1 {
-                writeln!(writable, "Examining {}", path.display())?;
-            }
-
-            // TODO
-            // START HERE
-            // Find the filesize and possibly leave the file open
-            // and make hash_of_path take an open file instead of
-            // a path
-            /* Don't bother to hash if filesizes don't match */
-            // let mut hashes_file = File::open(&hashes_path)?;
-            // let metadata = hashes_file.metadata()?;
-            // let mut last_line_byte_num: u64 = 0;
-            // let hashes_file_num_bytes = metadata.len();
-
-            match hash_of_path(&path) {
-                Ok(hash_and_size) => {
-                    let hash_s = hash_and_size.0;
-                    let num_bytes_hashed = hash_and_size.1;
-                    if sha1 == hash_s {
-                        num_bytes_compared += num_bytes_hashed;
-                        if num_vs > 1 {
-                            writeln!(writable, "{} bytes compared so far",
-                                    num_bytes_compared)?;
-                        }
-                    }
-                    else {
-                        return Ok(6);
-                    }
-                },
-                Err(error) => {
-                    writeln!(writable, "Couldn't hash {}", path.display())?;
-                    return Err(Error::new(ErrorKind::Other, error));
-                }
-            }
-        }
-
-        match num_bytes {
-            Some(num_bytes) => {
-                writeln!(writable,
-                        "Successfully compared {}/{} bytes ({}% confidence)",
-                        num_bytes_compared, num_bytes,
-                        ((num_bytes_compared as f32 / num_bytes as f32) * 100.0))?;
-            },
-            None => {
-                writeln!(writable, "Successfully compared {} bytes.",
-                        num_bytes_compared)?;
-            }
-        }
-        return Ok(0);
+        return compare_hashes(hashes_filename.unwrap(), filename_l, num_vs, num_bytes, writable);
     }
 
     /* Otherwise, walk the tree now */
