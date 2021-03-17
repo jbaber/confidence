@@ -324,6 +324,12 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
             break;
         }
 
+
+        if pieces.len() != 4 {
+            return Err(Error::new(ErrorKind::Other,
+                    "Corrupt file: found a line without 4 components"));
+        }
+
         let sha1 = pieces[1];
 
         /* Un-base64 the path to a regular string.  Unix specific */
