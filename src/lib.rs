@@ -16,6 +16,23 @@ use sha1;
 use base64;
 
 
+pub fn size_from_path(path: &Path) -> Result<usize, Error> {
+    if !path.is_file() {
+        if let Some(path_s) = path.to_str() {
+            Err(Error::new(ErrorKind::Other,
+                    path_s.to_owned() + " is not a regular file."))
+        }
+        else {
+            Err(Error::new(ErrorKind::Other, "Empty path"))
+        }
+    }
+    else {
+        let metadata = fs::metadata(path)?;
+        Ok(metadata.len() as usize)
+    }
+}
+
+
 /// Returns the hash string and the number of bytes hashed
 pub fn hash_of_path(path: &Path) -> Result<(String, usize), Error> {
     if !path.is_file() {
@@ -272,6 +289,7 @@ pub fn bytes_from_last_line(last_line: &str) -> Result<usize, Error> {
 }
 
 
+/// Un-base64 the path to a regular string.  Unix specific.
 pub fn path_string_from_b64(b64: &str) -> Result<String, Error> {
     let path_vec_u8 = base64::decode(b64);
     let path_s: String;
@@ -332,7 +350,14 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
 
         let sha1 = pieces[1];
 
-        /* Un-base64 the path to a regular string.  Unix specific */
+        let num_bytes_hashed = pieces[3].parse::<usize>();
+        if num_bytes_hashed.is_err() {
+            let err_s = "Can't interpret ".to_owned() + pieces[3] +
+                    " as an integer.";
+            return Err(Error::new(ErrorKind::Other, err_s));
+        }
+        let num_bytes_hashed = num_bytes_hashed.unwrap();
+
         let unbased = path_string_from_b64(pieces[2])?;
         let path = Path::new(directory).join(Path::new(&unbased));
 
@@ -340,16 +365,11 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
             writeln!(writable, "Examining {}", path.display())?;
         }
 
-        // TODO
-        // START HERE
-        // Find the filesize and possibly leave the file open
-        // and make hash_of_path take an open file instead of
-        // a path
         /* Don't bother to hash if filesizes don't match */
-        // let mut hashes_file = File::open(&hashes_path)?;
-        // let metadata = hashes_file.metadata()?;
-        // let mut last_line_byte_num: u64 = 0;
-        // let hashes_file_num_bytes = metadata.len();
+        if size_from_path(&path)? != num_bytes_hashed {
+            let err_s = unbased + " not the same size in both locations";
+            return Err(Error::new(ErrorKind::Other, err_s));
+        }
 
         match hash_of_path(&path) {
             Ok(hash_and_size) => {
