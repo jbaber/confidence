@@ -608,6 +608,9 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                             bytes_compared.disagreement, num_bytes,
                             (bytes_compared.disagreement as f32 / num_bytes as f32) * 100.0)?;
                 }
+                else {
+                    writeln!(writable, "0 bytes disagree.  (0% worry)")?;
+                }
             },
             None => {
                 writeln!(writable, "{} bytes agree.",
@@ -615,6 +618,9 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                 if bytes_compared.disagreement > 0 {
                     writeln!(writable, "{} bytes disagree.",
                             bytes_compared.agreement)?;
+                }
+                else {
+                    writeln!(writable, "0 bytes disagree.  (0% worry)")?;
                 }
             }
         }
