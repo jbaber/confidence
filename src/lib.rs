@@ -399,7 +399,25 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
             writeln!(writable, "Examining {}", path.display())?;
         }
 
-        /* Don't bother to hash if filesizes don't match */
+        if !path.is_file() {
+            if num_bytes_hashed == 0 {
+                eprintln!("{} is empty and {} doesn't exist.", unbased,
+                        path.display());
+                eprintln!("A disagreement, but not in bytes.");
+                continue;
+            }
+            else {
+                to_return += BytesComparison{disagreement: num_bytes_hashed,
+                        agreement: 0};
+                continue;
+            }
+        }
+
+        /* Don't bother to hash if filesizes don't match
+         *
+         * The logic here has decided that nonexistent files and
+         * empty files are equal!
+         */
         let cur_size = size_from_path(&path)?;
         let max_bytes_compared = cmp::max(cur_size, num_bytes_hashed);
         if cur_size != num_bytes_hashed {
