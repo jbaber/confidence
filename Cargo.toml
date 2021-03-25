@@ -1,6 +1,6 @@
 [package]
 name = "confidence"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["John Baber-Lucero <cargo@frundle.com>"]
 license = "GPL-3.0"
 description = "Build confidence that two directories are equal by hashing contents"
