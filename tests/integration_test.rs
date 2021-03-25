@@ -4,7 +4,7 @@ use confidence::runtime_with_regular_args;
 fn test_dir_0() {
     let mut stdout = Vec::new();
     let result = runtime_with_regular_args(true, Some(19), "tests/test_dir_0",
-            Some("tests/test_dir_1"), None, &mut stdout, 3);
+            Some("tests/test_dir_1"), None, &mut stdout, 3, false);
     assert_eq!(result.unwrap(), 0);
 
     // TODO Remove sentinel files before test.  They're only there because

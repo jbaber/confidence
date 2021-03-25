@@ -17,6 +17,7 @@ use std::ops::Add;
 use std::ops::AddAssign;
 use std::path::Path;
 use walkdir::WalkDir;
+use indicatif::ProgressBar;
 
 
 pub struct BytesComparison {
@@ -103,7 +104,8 @@ pub fn hash_of_path(path: &Path) -> Result<(String, usize), Error> {
 /// Returns number of bytes hashed
 /// Writes out hash for later comparison
 pub fn hash_path(path: &Path, filename_l: &str,
-        writable: &mut impl Write, num_vs: u8) -> Result<usize, Error> {
+        writable: &mut impl Write, num_vs: u8,
+        progress_bar: &Option<ProgressBar>) -> Result<usize, Error> {
     if num_vs > 1 {
         writeln!(writable, "Output hash of {}", path.display())?;
     }
@@ -116,6 +118,7 @@ pub fn hash_path(path: &Path, filename_l: &str,
 
     match possibly_error {
         Ok((cur_hash, num_bytes_hashed)) => {
+            output_progress(num_bytes_hashed as u64, &progress_bar);
             if num_vs > 1 {
                 writeln!(writable, "Successfully hashed {} bytes",
                         num_bytes_hashed)?;
@@ -451,11 +454,26 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
 }
 
 
+/// Print a progress bar to stderr if `progress` is true and `num_bytes` is_some
+pub fn output_progress(numerator: u64, progress_bar: &Option<ProgressBar>) {
+    if let Some(ref bar) = progress_bar {
+      bar.inc(numerator as u64);
+    }
+}
+
+
 /// Return number of bytes 
 pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         num_bytes: Option<usize>, filename_l: &str, filename_r: Option<&str>,
-        hashes_filename: Option<&str>, mut writable: impl Write, num_vs: u8) ->
+        hashes_filename: Option<&str>, mut writable: impl Write, num_vs: u8,
+        progress: bool) ->
         Result<i32, Error> {
+    let progress_bar = if progress && num_bytes.is_some() {
+        Some(ProgressBar::new(num_bytes.unwrap() as u64))
+    }
+    else {
+        None
+    };
     let comparing_paths = filename_r.is_some();
     let comparing_hashes = hashes_filename.is_some();
 
@@ -490,7 +508,7 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                 /* This is the generated hashes case */
                 else {
                     bytes_examined += hash_path(entry.path(), filename_l,
-                            &mut writable, num_vs)?;
+                            &mut writable, num_vs, &progress_bar)?;
                 }
             },
 
@@ -567,6 +585,7 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
     /* Parse and validate arguments */
     let ignore_perm_errors_flag =
             matches.is_present("ignore-permission-errors");
+    let progress = matches.is_present("progress");
     let num_bytes: Option<usize>;
     match matches.value_of("size") {
         Some(size_arg) => {
@@ -605,7 +624,8 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
 
     /* Run them through the meat of the program */
     match runtime_with_regular_args(ignore_perm_errors_flag, num_bytes,
-            filename_l, filename_r, input_filename, output_file, num_vs) {
+            filename_l, filename_r, input_filename, output_file, num_vs,
+            progress) {
         Ok(retval) => {
             retval
         },
