@@ -107,7 +107,7 @@ pub fn hash_path(path: &Path, filename_l: &str,
         writable: &mut impl Write, num_vs: u8,
         progress_bar: &Option<ProgressBar>) -> Result<usize, Error> {
     if num_vs > 1 {
-        writeln!(writable, "Output hash of {}", path.display())?;
+        eprintln!("Output hash of {}", path.display());
     }
 
     if !path.is_file() {
@@ -120,8 +120,8 @@ pub fn hash_path(path: &Path, filename_l: &str,
         Ok((cur_hash, num_bytes_hashed)) => {
             output_progress(num_bytes_hashed as u64, &progress_bar);
             if num_vs > 1 {
-                writeln!(writable, "Successfully hashed {} bytes",
-                        num_bytes_hashed)?;
+                eprintln!("Successfully hashed {} bytes",
+                        num_bytes_hashed);
             }
 
             // TODO Maybe use serde or something so the path isn't just
