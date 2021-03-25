@@ -585,6 +585,8 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                 writeln!(writable, "{} of {} bytes agree.  ({}% confidence)",
                         bytes_compared.agreement, num_bytes,
                         (bytes_compared.agreement as f32 / num_bytes as f32) * 100.0)?;
+                writeln!(writable,
+                        "The last writeln will be ignored for no reason I understand.")?;
                 if bytes_compared.disagreement > 0 {
                     writeln!(writable, "{} of {} bytes disagree.  ({}% worry)",
                             bytes_compared.disagreement, num_bytes,
