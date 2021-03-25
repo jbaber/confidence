@@ -353,7 +353,7 @@ pub fn path_string_from_b64(b64: &str) -> Result<String, Error> {
 
 
 pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
-        num_bytes: Option<usize>, mut writable: impl Write) ->
+        mut writable: impl Write, progress: bool) ->
         Result<BytesComparison, Error> {
     if num_vs > 1 {
         writeln!(writable, "Reading {}", hashes_filename)?;
@@ -361,6 +361,12 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
     let hashes_path = Path::new(hashes_filename);
     let hashes_file = File::open(&hashes_path)?;
     let num_bytes_hashed = bytes_from_last_line(&last_line_of(&hashes_file)?)?;
+    let progress_bar = if progress {
+        Some(ProgressBar::new(num_bytes_hashed as u64))
+    }
+    else {
+        None
+    };
     if num_vs > 0 {
         writeln!(writable, "Num bytes previously hashed: {}", num_bytes_hashed)?;
     }
@@ -392,21 +398,25 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
         }
         let num_bytes_hashed = num_bytes_hashed.unwrap();
 
-        let unbased = path_string_from_b64(pieces[2])?;
-        let path = Path::new(directory).join(Path::new(&unbased));
+        let old_path_s = path_string_from_b64(pieces[2])?;
+        let path = Path::new(directory).join(Path::new(&old_path_s));
 
         if num_vs > 1 {
             writeln!(writable, "Examining {}", path.display())?;
         }
 
+        output_progress(num_bytes_hashed as u64, &progress_bar);
+
         if !path.is_file() {
             if num_bytes_hashed == 0 {
-                eprintln!("{} is empty and {} doesn't exist.", unbased,
-                        path.display());
-                eprintln!("A disagreement, but not in bytes.");
+                writeln!(writable, "Disagreement (0 bytes): {} is empty and {} doesn't exist.",
+                        old_path_s, path.display())?;
                 continue;
             }
             else {
+                writeln!(writable,
+                        "Disagreement ({} bytes): {} exists and {} doesn't exist.",
+                        num_bytes_hashed, old_path_s, path.display())?;
                 to_return += BytesComparison{disagreement: num_bytes_hashed,
                         agreement: 0};
                 continue;
@@ -421,6 +431,8 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
         let cur_size = size_from_path(&path)?;
         let max_bytes_compared = cmp::max(cur_size, num_bytes_hashed);
         if cur_size != num_bytes_hashed {
+            writeln!(writable, "Disagreement ({} bytes): {} and {} are different sizes.",
+                    max_bytes_compared, old_path_s, path.display())?;
             to_return += BytesComparison{disagreement: max_bytes_compared, agreement: 0};
             continue;
         }
@@ -434,38 +446,35 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
                     continue;
                 }
                 else {
+                    writeln!(writable, "Disagreement ({} bytes): {} and {} have different hashes.",
+                            max_bytes_compared, old_path_s, path.display())?;
                     to_return += BytesComparison{disagreement: max_bytes_compared, agreement: 0};
                     continue;
                 }
             },
             Err(_) => {
-                writeln!(writable, "Couldn't hash {}", path.display())?;
+                writeln!(writable, "Disagreement ({} bytes): Couldn't hash {}",
+                        max_bytes_compared, path.display())?;
                 to_return += BytesComparison{disagreement: max_bytes_compared, agreement: 0};
                 continue;
             }
         }
     }
 
-    match num_bytes {
-        None => {
-            writeln!(writable, "Agreed on {} bytes.", to_return.agreement)?;
-            if to_return.disagreement > 0 {
-                writeln!(writable, "Disagreed on {} bytes.",
-                        to_return.disagreement)?;
-            }
-        },
-        Some(num_bytes) => {
-            writeln!(writable,
-                    "Agreed on {}/{} bytes ({}% confidence)",
-                    to_return.agreement, num_bytes,
-                    ((to_return.agreement as f32 / num_bytes as f32) * 100.0))?;
-            if to_return.disagreement > 0 {
-                writeln!(writable,
-                    "Disagreed on {}/{} bytes ({}% worry)",
-                    to_return.disagreement, num_bytes,
-                    ((to_return.disagreement as f32 / num_bytes as f32) * 100.0))?;
-            }
-        },
+    writeln!(writable,
+            "Agreed on {}/{} bytes ({}% confidence)",
+            to_return.agreement, num_bytes_hashed,
+            ((to_return.agreement as f32 / num_bytes_hashed as f32) * 100.0))?;
+    if to_return.disagreement > 0 {
+        writeln!(writable,
+            "Disagreed on {}/{} bytes ({}% worry)",
+            to_return.disagreement, num_bytes_hashed,
+            ((to_return.disagreement as f32 / num_bytes_hashed as f32) * 100.0))?;
+        writeln!(writable,
+                "The last writeln will be ignored for no reason I understand.")?;
+    }
+    else {
+        writeln!(writable, "Disagreed on 0 bytes. (0% worry)")?;
     }
 
     Ok(to_return)
@@ -486,17 +495,12 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         hashes_filename: Option<&str>, mut writable: impl Write, num_vs: u8,
         progress: bool) ->
         Result<i32, Error> {
-    let progress_bar = if progress && num_bytes.is_some() {
-        Some(ProgressBar::new(num_bytes.unwrap() as u64))
-    }
-    else {
-        None
-    };
     let comparing_paths = filename_r.is_some();
     let comparing_hashes = hashes_filename.is_some();
 
     if comparing_hashes {
-        match compare_hashes(hashes_filename.unwrap(), filename_l, num_vs, num_bytes, writable) {
+        match compare_hashes(hashes_filename.unwrap(), filename_l, num_vs,
+                writable, progress) {
             Err(error) => {
                 return Err(Error::new(ErrorKind::Other, error));
             },
@@ -514,6 +518,12 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
     /* Otherwise, walk the tree now */
     let mut bytes_compared = BytesComparison{disagreement: 0, agreement: 0};
     let mut bytes_examined: usize = 0;
+    let progress_bar = if progress && num_bytes.is_some() {
+        Some(ProgressBar::new(num_bytes.unwrap() as u64))
+    }
+    else {
+        None
+    };
     for entry in WalkDir::new(filename_l) {
         match entry {
             Ok(entry) => {
