@@ -501,7 +501,7 @@ pub fn output_progress(numerator: u64, progress_bar: &Option<ProgressBar>) {
 pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         num_bytes: Option<usize>, filename_l: &str, filename_r: Option<&str>,
         hashes_filename: Option<&str>, mut writable: impl Write, num_vs: u8,
-        progress: bool) ->
+        progress: bool, find_file_sizes: bool) ->
         Result<i32, Error> {
     let comparing_paths = filename_r.is_some();
     let comparing_hashes = hashes_filename.is_some();
@@ -529,6 +529,10 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
     let progress_bar = if progress && num_bytes.is_some() {
         Some(ProgressBar::new(num_bytes.unwrap() as u64))
     }
+    // Somehow this doesn't work.
+    // else if progress && find_file_sizes {
+    //     Some(ProgressBar::new_spinner())
+    // }
     else {
         None
     };
@@ -539,6 +543,18 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                     bytes_compared += compare_paths(entry.path(),
                             filename_l, filename_r.unwrap(), &mut writable,
                             num_vs, &progress_bar)?;
+                }
+
+                else if find_file_sizes {
+                    let before = bytes_examined;
+                    match size_from_path(entry.path()) {
+                        Ok(num_bytes) => {
+                            bytes_examined += num_bytes;
+                            output_progress((bytes_examined - before) as u64,
+                                    &progress_bar);
+                        },
+                        Err(_) => {}
+                    }
                 }
 
                 /* This is the generated hashes case */
@@ -603,6 +619,10 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
             }
         }
     }
+    else if find_file_sizes {
+        writeln!(writable, "{} bytes", bytes_examined)?;
+        return Ok(0);
+    }
     else {
         writeln!(writable, "{} bytes hashed", bytes_examined)?;
         return Ok(0);
@@ -641,6 +661,7 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
         }
     }
 
+    let find_file_sizes = matches.is_present("find-size");
     let filename_l = matches.value_of("directory_one").unwrap();
     let filename_r = matches.value_of("directory_two");
     let num_vs = matches.occurrences_of("verbosity") as u8;
@@ -663,7 +684,7 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
     /* Run them through the meat of the program */
     match runtime_with_regular_args(ignore_perm_errors_flag, num_bytes,
             filename_l, filename_r, input_filename, output_file, num_vs,
-            progress) {
+            progress, find_file_sizes) {
         Ok(retval) => {
             retval
         },
