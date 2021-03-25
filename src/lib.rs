@@ -158,7 +158,8 @@ pub fn hash_path(path: &Path, filename_l: &str,
 /// it's in.  `filename_r` to be a directory that should have a copy
 /// of it.
 pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
-        writable: &mut impl Write, num_vs: u8) -> Result<BytesComparison, Error> {
+        writable: &mut impl Write, num_vs: u8, progress_bar: &Option<ProgressBar>)
+                -> Result<BytesComparison, Error> {
 
     /* Don't care about directories or symlinks */
     if !path.is_file() {
@@ -188,7 +189,9 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
                         "' isn't a regular file, but '" +
                         path_l.to_str().unwrap() + "' is.";
                 writeln!(writable, "{}", error_s)?;
-                return Ok(BytesComparison{disagreement: size_from_path(&path_l)?, agreement: 0});
+                let cur_size = size_from_path(&path_l)?;
+                output_progress(cur_size as u64, &progress_bar);
+                return Ok(BytesComparison{disagreement: cur_size, agreement: 0});
             }
 
             /* Finally, path_l and path_r are files to compare. */
@@ -198,6 +201,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
             /* Be happy if they're literally the same file. */
             let num_bytes_l = metadata_l.len() as usize;
             if Handle::from_path(&path_l)? == Handle::from_path(&path_r)? {
+                output_progress(num_bytes_l as u64, &progress_bar);
                 return Ok(BytesComparison{agreement: num_bytes_l, disagreement: 0});
             }
 
@@ -212,6 +216,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
                 let error_s = "'".to_owned() + path_l.to_str().unwrap() +
                         "' and '" + path_r_s + "' aren't the same size.";
                 writeln!(writable, "{}", error_s)?;
+                output_progress(max_bytes_compared as u64, &progress_bar);
                 return Ok(BytesComparison{disagreement: max_bytes_compared, agreement: 0});
             }
 
@@ -234,6 +239,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
                             "bytes from '" + path_l_s +
                             "' and '" + path_r_s + "'";
                     writeln!(writable, "{}", error_s)?;
+                    output_progress(max_bytes_compared as u64, &progress_bar);
                     return Ok(BytesComparison{disagreement: max_bytes_compared, agreement: 0});
                 }
 
@@ -242,6 +248,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
                             "' and '" + path_r_s +
                             "' aren't equal.";
                     writeln!(writable, "{}", error_s)?;
+                    output_progress(max_bytes_compared as u64, &progress_bar);
                     return Ok(BytesComparison{disagreement: max_bytes_compared, agreement: 0});
                 }
 
@@ -257,6 +264,7 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
                 writeln!(writable, "Successfully compared {} bytes",
                         num_bytes_examined)?;
             }
+            output_progress(num_bytes_examined as u64, &progress_bar);
             Ok(BytesComparison{agreement: num_bytes_examined, disagreement: 0})
         },
 
@@ -481,7 +489,7 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
 }
 
 
-/// Print a progress bar to stderr if `progress` is true and `num_bytes` is_some
+/// Print a progress bar to stderr if `progress` is_some
 pub fn output_progress(numerator: u64, progress_bar: &Option<ProgressBar>) {
     if let Some(ref bar) = progress_bar {
       bar.inc(numerator as u64);
@@ -530,7 +538,7 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                 if comparing_paths {
                     bytes_compared += compare_paths(entry.path(),
                             filename_l, filename_r.unwrap(), &mut writable,
-                            num_vs)?;
+                            num_vs, &progress_bar)?;
                 }
 
                 /* This is the generated hashes case */
