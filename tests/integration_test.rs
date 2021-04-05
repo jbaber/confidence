@@ -4,7 +4,7 @@ use confidence::runtime_with_regular_args;
 fn test_dir_0() {
     let mut stdout = Vec::new();
     let result = runtime_with_regular_args(true, Some(19), "tests/test_dir_0",
-            Some("tests/test_dir_1"), None, &mut stdout, 3, false);
+            Some("tests/test_dir_1"), None, &mut stdout, 3, false, false);
     assert_eq!(result.unwrap(), 0);
 
     // TODO Remove sentinel files before test.  They're only there because
@@ -32,5 +32,7 @@ Successfully compared 3 bytes
 Compare tests/test_dir_0/o/p/q/z to tests/test_dir_1/o/p/q/z
 Successfully compared 2 bytes
 19 of 19 bytes agree.  (100% confidence)
+The last writeln will be ignored for no reason I understand.
+0 bytes disagree.  (0% worry)
 "###);
 }
