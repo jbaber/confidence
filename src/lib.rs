@@ -1,5 +1,8 @@
+use anyhow::anyhow;
+use anyhow::bail;
 use base64;
 use clap::ArgMatches;
+use indicatif::ProgressBar;
 use same_file::Handle;
 use sha1;
 use std::cmp;
@@ -17,7 +20,6 @@ use std::ops::Add;
 use std::ops::AddAssign;
 use std::path::Path;
 use walkdir::WalkDir;
-use indicatif::ProgressBar;
 
 
 pub struct BytesComparison {
@@ -48,14 +50,13 @@ impl AddAssign for BytesComparison {
 }
 
 
-pub fn size_from_path(path: &Path) -> Result<usize, Error> {
+pub fn size_from_path(path: &Path) -> Result<usize, anyhow::Error> {
     if !path.is_file() {
         if let Some(path_s) = path.to_str() {
-            Err(Error::new(ErrorKind::Other,
-                    path_s.to_owned() + " is not a regular file."))
+            Err(anyhow!("{} is not a regular file.", path_s.to_owned()))
         }
         else {
-            Err(Error::new(ErrorKind::Other, "Empty path"))
+            Err(anyhow!("Empty path"))
         }
     }
     else {
@@ -159,7 +160,7 @@ pub fn hash_path(path: &Path, filename_l: &str,
 /// of it.
 pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
         writable: &mut impl Write, num_vs: u8, progress_bar: &Option<ProgressBar>)
-                -> Result<BytesComparison, Error> {
+                -> Result<BytesComparison, anyhow::Error> {
 
     /* Don't care about directories or symlinks */
     if !path.is_file() {
@@ -177,11 +178,8 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
             }
 
             if path_l != path {
-                let error_s = "'".to_owned() + filename_l +
-                        "' doesn't contain '" + path.to_str().unwrap() +
-                        "'.  Don't know what to do here.";
-                writeln!(writable, "{}", error_s)?;
-                return Err(Error::new(ErrorKind::Other, error_s));
+                bail!("'{}' doesn't contain '{}'.  Don't know what to do here.",
+                        filename_l, path.to_str().unwrap());
             }
 
             if !path_r.is_file() {
@@ -268,9 +266,8 @@ pub fn compare_paths(path: &Path, filename_l: &str, filename_r: &str,
             Ok(BytesComparison{agreement: num_bytes_examined, disagreement: 0})
         },
 
-        /* filename_l doesn't contain path*/
         Err(error) => {
-            return Err(Error::new(ErrorKind::Other, error));
+            bail!("{} doesn't contain path.", filename_l);
         }
     }
 }
@@ -362,7 +359,7 @@ pub fn path_string_from_b64(b64: &str) -> Result<String, Error> {
 
 pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
         mut writable: impl Write, progress: bool) ->
-        Result<BytesComparison, Error> {
+        Result<BytesComparison, anyhow::Error> {
     if num_vs > 1 {
         writeln!(writable, "Reading {}", hashes_filename)?;
     }
@@ -392,17 +389,14 @@ pub fn compare_hashes(hashes_filename: &str, directory: &str, num_vs: u8,
         }
 
         if pieces.len() != 4 {
-            return Err(Error::new(ErrorKind::Other,
-                    "Corrupt file: found a line without 4 components"));
+            bail!("Corrupt file: found a line without 4 components");
         }
 
         let sha1 = pieces[1];
 
         let num_bytes_hashed = pieces[3].parse::<usize>();
         if num_bytes_hashed.is_err() {
-            let err_s = "Can't interpret ".to_owned() + pieces[3] +
-                    " as an integer.";
-            return Err(Error::new(ErrorKind::Other, err_s));
+            bail!("Can't interpret {} as an integer.", pieces[3]);
         }
         let num_bytes_hashed = num_bytes_hashed.unwrap();
 
@@ -502,7 +496,7 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         num_bytes: Option<usize>, filename_l: &str, filename_r: Option<&str>,
         hashes_filename: Option<&str>, mut writable: impl Write, num_vs: u8,
         progress: bool, find_file_sizes: bool) ->
-        Result<i32, Error> {
+        Result<i32, anyhow::Error> {
     let comparing_paths = filename_r.is_some();
     let comparing_hashes = hashes_filename.is_some();
 
@@ -510,7 +504,7 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
         match compare_hashes(hashes_filename.unwrap(), filename_l, num_vs,
                 writable, progress) {
             Err(error) => {
-                return Err(Error::new(ErrorKind::Other, error));
+                return Err(error);
             },
             Ok(bytes_comparison) => {
                 if bytes_comparison.disagreement > 0 {
@@ -575,10 +569,11 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                                 if ignore_perm_errors_flag {
                                     continue;
                                 }
-                                return Err(Error::new(kind, error));
+                                return Err(anyhow!("{:?}", io_error));
+                                // return Err(anyhow::Error("io error"));
                             },
                             _ => {
-                                return Err(Error::new(kind, error));
+                                return Err(anyhow!("{:?}", io_error));
                             }
                         }
                     },
@@ -586,7 +581,7 @@ pub fn runtime_with_regular_args(ignore_perm_errors_flag: bool,
                     /* Doesn't correspond to IO error, e.g. cycle following
                      * symbolic links */
                     None => {
-                        return Err(Error::new(ErrorKind::Other, error));
+                        return Err(anyhow!("{:?}", error));
                     }
                 }
             }
@@ -697,6 +692,8 @@ pub fn actual_runtime(matches: ArgMatches) -> i32 {
         Err(error) => {
             let outer_error_string = error.to_string();
             // TODO Any shorthand for this nested chain of matches?  if let?, unwrap, expect, ? 
+            // Wanting to check error.kind() means I can't use anyhow errors unless
+            // there's some way to wrap an error up and re-access it here.
             match error.kind() {
                 ErrorKind::NotFound => {
                     match filename_r {
